@@ -102,10 +102,35 @@ def test_invalid_json_returns_400(session_factory) -> None:
         )
     )
 
+    body = b"{not-json"
+
     response = TestClient(app).post(
         "/webhooks/line",
-        content=b"{not-json",
-        headers={"X-Line-Signature": "unused"},
+        content=body,
+        headers={
+            "X-Line-Signature": sign_body(body, "secret"),
+        },
     )
 
     assert response.status_code == 400
+
+def test_invalid_signature_is_rejected_before_json_parsing(
+    session_factory,
+) -> None:
+    line = FakeLineClient()
+    configure_line_webhook_dependencies(
+        LineWebhookDependencies(
+            session_factory=session_factory,
+            channel_secret="secret",
+            provider=SuccessfulProvider(),
+            notification_service=NotificationService(line),
+        )
+    )
+
+    response = TestClient(app).post(
+        "/webhooks/line",
+        content=b"{not-json",
+        headers={"X-Line-Signature": "invalid"},
+    )
+
+    assert response.status_code == 401
