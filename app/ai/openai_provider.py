@@ -36,6 +36,7 @@ class OpenAIResponsesProvider:
             response = self.client.responses.create(
                 model=self.model,
                 input=prompt,
+                store=False,
             )
         except Exception as exc:
             raise AIProviderError("OpenAI Responses API request failed") from exc

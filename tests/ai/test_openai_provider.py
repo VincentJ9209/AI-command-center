@@ -38,6 +38,7 @@ def test_openai_provider_uses_responses_api_and_returns_text() -> None:
     assert result.response_id == "resp_123"
     assert responses.calls[0]["model"] == "gpt-5.6"
     assert "分析 AI Skill 市場" in responses.calls[0]["input"]
+    assert responses.calls[0]["store"] is False
 
 
 def test_openai_provider_wraps_sdk_errors() -> None:
