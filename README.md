@@ -9,15 +9,35 @@ A LINE-based personal AI operations console and portfolio project.
 - LINE text-event parser
 - AI Skill Market Intelligence routing
 - Approval policy for high-risk actions
-- Pytest test suite
+- SQLAlchemy task persistence and lifecycle
+- OpenAI Responses API execution
+- LINE ACK / DONE / FAILED / ACTION_REQUIRED notifications
+- End-to-end webhook orchestration
+- Environment-based production configuration
+- PostgreSQL runtime wiring
+- Docker / Docker Compose readiness
 
-## Local test
+## Local development
+
+Create `.env` from `.env.example`, then:
 
 ```bash
 python -m pip install -e ".[dev]"
 pytest -q
 ```
 
+## Docker
+
+```bash
+docker compose up --build
+```
+
+Service endpoints:
+
+- `GET /health`
+- `GET /ready`
+- `POST /webhooks/line`
+
 ## Next milestone
 
-Task persistence and lifecycle management with PostgreSQL.
+Move long-running AI execution out of the webhook request path so LINE webhook responses return quickly and task execution continues asynchronously.
