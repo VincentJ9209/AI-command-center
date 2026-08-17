@@ -5,6 +5,7 @@ description = "LINE-based personal AI operations command center"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.116,<1.0",
+    "httpx>=0.28,<1.0",
     "openai>=1.0,<3.0",
     "sqlalchemy>=2.0,<3.0",
     "uvicorn[standard]>=0.35,<1.0",
@@ -12,7 +13,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "httpx>=0.28,<1.0",
     "pytest>=8.4,<9.0",
 ]
 
