@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
 
-
-POSTGRES_TEST_DATABASE_URL = (
-    "POSTGRES_TEST_DATABASE_URL"
+from tests.integration.database_safety import (
+    require_postgres_test_database_url,
 )
 
 PROJECT_ROOT = Path(
@@ -24,16 +22,9 @@ MIGRATION_PATH = (
 
 @pytest.fixture
 def postgres_engine():
-    database_url = os.getenv(
-        POSTGRES_TEST_DATABASE_URL
+    database_url = (
+        require_postgres_test_database_url()
     )
-
-    if not database_url:
-        pytest.fail(
-            "POSTGRES_TEST_DATABASE_URL "
-            "must be set for PostgreSQL "
-            "integration tests"
-        )
 
     engine = create_engine(
         database_url,

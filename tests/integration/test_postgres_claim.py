@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-import os
+
 from threading import Barrier
 
 import pytest
@@ -19,25 +19,15 @@ from app.persistence.models import (
     TaskStatus,
 )
 from app.tasks.repository import TaskRepository
-
-
-POSTGRES_TEST_DATABASE_URL = (
-    "POSTGRES_TEST_DATABASE_URL"
+from tests.integration.database_safety import (
+    require_postgres_test_database_url,
 )
-
 
 @pytest.fixture
 def postgres_session_factory():
-    database_url = os.getenv(
-        POSTGRES_TEST_DATABASE_URL
+    database_url = (
+        require_postgres_test_database_url()
     )
-
-    if not database_url:
-        pytest.fail(
-            "POSTGRES_TEST_DATABASE_URL "
-            "must be set for PostgreSQL "
-            "integration tests"
-        )
 
     engine = build_engine(
         database_url,
