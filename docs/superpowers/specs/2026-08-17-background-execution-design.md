@@ -1,7 +1,7 @@
 # AI-command-center Task 8B Background Execution Design
 
-**Date:** 2026-08-17  
-**Status:** Approved design baseline; ready for repository review and commit  
+**Date:** 2026-08-17
+**Status:** Approved design baseline; ready for repository review and commit
 **Branch:** `feat/background-execution`
 
 ## Purpose
