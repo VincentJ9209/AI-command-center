@@ -24,6 +24,7 @@ class TaskService:
         line_message_id: str,
         project_key: str,
         request_text: str,
+         source_user_id: str | None = None,
         normalized_intent: dict | None = None,
     ) -> ReceiveTaskResult:
         existing = self.repository.get_by_line_message_id(line_message_id)
@@ -35,6 +36,7 @@ class TaskService:
                 line_message_id=line_message_id,
                 project_key=project_key,
                 request_text=request_text,
+                source_user_id=source_user_id,
                 normalized_intent=normalized_intent,
             )
             self.session.commit()

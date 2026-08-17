@@ -12,6 +12,9 @@ class TaskRepository:
     def get_by_line_message_id(self, line_message_id: str) -> Task | None:
         statement = select(Task).where(Task.line_message_id == line_message_id)
         return self.session.scalar(statement)
+    
+    def get_by_id(self, task_id: str) -> Task | None:
+        return self.session.get(Task, task_id)
 
     def create(
         self,
@@ -20,12 +23,14 @@ class TaskRepository:
         project_key: str,
         request_text: str,
         source_channel: str = "LINE",
+        source_user_id: str | None = None,
         normalized_intent: dict | None = None,
     ) -> Task:
         task = Task(
             line_message_id=line_message_id,
             project_key=project_key,
             source_channel=source_channel,
+            source_user_id=source_user_id,
             request_text=request_text,
             normalized_intent=normalized_intent,
             status=TaskStatus.RECEIVED.value,

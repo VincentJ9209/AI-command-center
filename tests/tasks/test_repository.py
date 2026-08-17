@@ -56,3 +56,32 @@ def test_transition_persists_event_and_result(session: Session) -> None:
         TaskStatus.RUNNING.value,
         TaskStatus.COMPLETED.value,
     ]
+
+def test_new_task_persists_source_user_id(session: Session) -> None:
+    repository = TaskRepository(session)
+
+    task = repository.create(
+        line_message_id="source-user-message",
+        project_key="GENERAL",
+        request_text="整理資訊",
+        source_user_id="user-1",
+    )
+    session.commit()
+
+    assert task.source_user_id == "user-1"
+
+
+def test_get_by_id_returns_task(session: Session) -> None:
+    repository = TaskRepository(session)
+
+    task = repository.create(
+        line_message_id="get-by-id-message",
+        project_key="GENERAL",
+        request_text="查詢 Task",
+    )
+    session.commit()
+
+    loaded = repository.get_by_id(task.id)
+
+    assert loaded is not None
+    assert loaded.id == task.id
