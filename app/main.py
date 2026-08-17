@@ -34,6 +34,7 @@ app = FastAPI(
     title="AI-command-center",
     lifespan=lifespan,
 )
+
 app.include_router(line_webhook_router)
 
 
@@ -45,10 +46,15 @@ def health() -> dict[str, str]:
 @app.get("/ready")
 def ready() -> dict[str, str]:
     runtime: Runtime | None = getattr(app.state, "runtime", None)
+
     if runtime is None:
-        raise HTTPException(status_code=503, detail="Runtime not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="Runtime not configured",
+        )
 
     session = runtime.session_factory()
+
     try:
         session.execute(text("SELECT 1"))
     except Exception as exc:
