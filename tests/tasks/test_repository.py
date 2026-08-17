@@ -1,3 +1,5 @@
+import pytest
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -85,3 +87,117 @@ def test_get_by_id_returns_task(session: Session) -> None:
 
     assert loaded is not None
     assert loaded.id == task.id
+
+def test_claim_for_execution_moves_received_task_to_running(
+    session: Session,
+) -> None:
+    repository = TaskRepository(session)
+
+    task = repository.create(
+        line_message_id="claim-received",
+        project_key="GENERAL",
+        request_text="執行背景工作",
+    )
+    session.commit()
+
+    claimed = repository.claim_for_execution(task.id)
+
+    assert claimed is not None
+    assert claimed.id == task.id
+    assert claimed.status == TaskStatus.RUNNING.value
+
+    running_events = session.scalars(
+        select(TaskEvent).where(
+            TaskEvent.task_id == task.id,
+            TaskEvent.to_status == TaskStatus.RUNNING.value,
+        )
+    ).all()
+
+    assert len(running_events) == 1
+    assert running_events[0].from_status == TaskStatus.RECEIVED.value
+
+def test_claim_for_execution_returns_none_for_missing_task(
+    session: Session,
+) -> None:
+    repository = TaskRepository(session)
+
+    claimed = repository.claim_for_execution("missing-task-id")
+
+    assert claimed is None
+
+
+def _create_task_in_status(
+    session: Session,
+    status: TaskStatus,
+):
+    repository = TaskRepository(session)
+
+    task = repository.create(
+        line_message_id=f"claim-skip-{status.value.lower()}",
+        project_key="GENERAL",
+        request_text="不要重複執行",
+    )
+
+    if status == TaskStatus.RUNNING:
+        repository.transition(
+            task,
+            TaskStatus.RUNNING,
+        )
+
+    elif status == TaskStatus.COMPLETED:
+        repository.transition(
+            task,
+            TaskStatus.RUNNING,
+        )
+        repository.transition(
+            task,
+            TaskStatus.COMPLETED,
+            result_summary="already completed",
+        )
+
+    elif status == TaskStatus.FAILED:
+        repository.transition(
+            task,
+            TaskStatus.FAILED,
+            error_details="already failed",
+        )
+
+    elif status == TaskStatus.WAITING_APPROVAL:
+        repository.transition(
+            task,
+            TaskStatus.WAITING_APPROVAL,
+        )
+
+    else:
+        raise AssertionError(
+            f"Unsupported test status: {status}"
+        )
+
+    session.commit()
+    return task
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        TaskStatus.RUNNING,
+        TaskStatus.COMPLETED,
+        TaskStatus.FAILED,
+        TaskStatus.WAITING_APPROVAL,
+    ],
+)
+def test_claim_for_execution_skips_non_received_tasks(
+    session: Session,
+    status: TaskStatus,
+) -> None:
+    repository = TaskRepository(session)
+
+    task = _create_task_in_status(
+        session,
+        status,
+    )
+
+    claimed = repository.claim_for_execution(task.id)
+
+    assert claimed is None
+    assert task.status == status.value

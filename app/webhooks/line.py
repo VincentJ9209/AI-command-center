@@ -115,10 +115,18 @@ class LineWebhookOrchestrator:
             )
             return True
 
+        repository = TaskRepository(self.session)
+        claimed_task = repository.claim_for_execution(task.id)
+
+        if claimed_task is None:
+            raise RuntimeError(
+                f"Task {task.id} could not be claimed for execution"
+            )
+
         execution = TaskExecutionService(
             self.session,
             self.provider,
-        ).execute(task)
+        ).execute(claimed_task)
 
         if execution.success:
             self.notification_service.send_push(

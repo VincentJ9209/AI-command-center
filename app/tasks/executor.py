@@ -21,8 +21,10 @@ class TaskExecutionService:
         self.repository = TaskRepository(session)
 
     def execute(self, task: Task) -> ExecutionOutcome:
-        self.repository.transition(task, TaskStatus.RUNNING)
-        self.session.commit()
+        if TaskStatus(task.status) != TaskStatus.RUNNING:
+            raise ValueError(
+                "Task must be RUNNING before execution"
+            )
 
         request = AIExecutionRequest(
             task_id=task.id,

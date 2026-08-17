@@ -16,6 +16,32 @@ class TaskRepository:
     def get_by_id(self, task_id: str) -> Task | None:
         return self.session.get(Task, task_id)
 
+    def claim_for_execution(
+        self,
+        task_id: str,
+    ) -> Task | None:
+        statement = (
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+        )
+
+        task = self.session.scalar(statement)
+
+        if task is None:
+            return None
+
+        if TaskStatus(task.status) != TaskStatus.RECEIVED:
+            return None
+
+        self.transition(
+            task,
+            TaskStatus.RUNNING,
+        )
+        self.session.commit()
+
+        return task
+
     def create(
         self,
         *,
