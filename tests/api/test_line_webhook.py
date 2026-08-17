@@ -1,20 +1,35 @@
 import json
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
-from app.ai.provider import AIExecutionRequest, AIExecutionResult
 from app.api.dependencies import (
     LineWebhookDependencies,
     configure_line_webhook_dependencies,
 )
+from app.jobs.dispatcher import JobDispatchError
 from app.main import app
 from app.notifications.service import NotificationService
+from app.persistence.models import Task, TaskStatus
 from tests.conftest import sign_body
 
 
-class SuccessfulProvider:
-    def execute(self, request: AIExecutionRequest) -> AIExecutionResult:
-        return AIExecutionResult(text="完成分析")
+class RecordingDispatcher:
+    def __init__(
+        self,
+        *,
+        fail: bool = False,
+    ) -> None:
+        self.fail = fail
+        self.task_ids: list[str] = []
+
+    def dispatch(self, task_id: str) -> None:
+        self.task_ids.append(task_id)
+
+        if self.fail:
+            raise JobDispatchError(
+                f"Failed to dispatch task {task_id}"
+            )
 
 
 class FakeLineClient:
@@ -30,37 +45,61 @@ class FakeLineClient:
         return "retry-key"
 
 
-def test_webhook_endpoint_returns_summary(session_factory) -> None:
-    line = FakeLineClient()
-    configure_line_webhook_dependencies(
-        LineWebhookDependencies(
-            session_factory=session_factory,
-            channel_secret="secret",
-            provider=SuccessfulProvider(),
-            notification_service=NotificationService(line),
-        )
-    )
-
-    payload = {
+def _payload(
+    message_id: str = "api-message-1",
+) -> dict:
+    return {
         "events": [
             {
                 "type": "message",
                 "replyToken": "reply-1",
-                "source": {"type": "user", "userId": "user-1"},
+                "source": {
+                    "type": "user",
+                    "userId": "user-1",
+                },
                 "message": {
-                    "id": "api-message-1",
+                    "id": message_id,
                     "type": "text",
-                    "text": "幫我整理今天 AI Skill 市場值得追蹤的方向",
+                    "text": (
+                        "幫我整理今天 AI Skill "
+                        "市場值得追蹤的方向"
+                    ),
                 },
             }
         ]
     }
-    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+
+def test_webhook_endpoint_returns_summary_and_dispatches(
+    session_factory,
+) -> None:
+    line = FakeLineClient()
+    dispatcher = RecordingDispatcher()
+
+    configure_line_webhook_dependencies(
+        LineWebhookDependencies(
+            session_factory=session_factory,
+            channel_secret="secret",
+            dispatcher=dispatcher,
+            notification_service=NotificationService(line),
+        )
+    )
+
+    payload = _payload()
+    body = json.dumps(
+        payload,
+        ensure_ascii=False,
+    ).encode("utf-8")
 
     response = TestClient(app).post(
         "/webhooks/line",
         content=body,
-        headers={"X-Line-Signature": sign_body(body, "secret")},
+        headers={
+            "X-Line-Signature": sign_body(
+                body,
+                "secret",
+            )
+        },
     )
 
     assert response.status_code == 200
@@ -70,14 +109,88 @@ def test_webhook_endpoint_returns_summary(session_factory) -> None:
         "duplicate_events": 0,
     }
 
+    with session_factory() as session:
+        task = session.scalar(select(Task))
 
-def test_invalid_signature_returns_401(session_factory) -> None:
+        assert task is not None
+        assert task.status == TaskStatus.RECEIVED.value
+        assert task.source_user_id == "user-1"
+
+        assert dispatcher.task_ids == [
+            task.id,
+        ]
+
+    assert len(line.reply_calls) == 1
+    assert "[ACK]" in line.reply_calls[0]["text"]
+    assert line.push_calls == []
+
+
+def test_dispatch_failure_returns_503_and_leaves_task_received(
+    session_factory,
+) -> None:
     line = FakeLineClient()
+
+    dispatcher = RecordingDispatcher(
+        fail=True,
+    )
+
     configure_line_webhook_dependencies(
         LineWebhookDependencies(
             session_factory=session_factory,
             channel_secret="secret",
-            provider=SuccessfulProvider(),
+            dispatcher=dispatcher,
+            notification_service=NotificationService(line),
+        )
+    )
+
+    payload = _payload(
+        "api-dispatch-failure"
+    )
+    body = json.dumps(
+        payload,
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    response = TestClient(app).post(
+        "/webhooks/line",
+        content=body,
+        headers={
+            "X-Line-Signature": sign_body(
+                body,
+                "secret",
+            )
+        },
+    )
+
+    assert response.status_code == 503
+
+    with session_factory() as session:
+        task = session.scalar(
+            select(Task).where(
+                Task.line_message_id
+                == "api-dispatch-failure"
+            )
+        )
+
+        assert task is not None
+        assert task.status == TaskStatus.RECEIVED.value
+
+        assert dispatcher.task_ids == [
+            task.id,
+        ]
+
+
+def test_invalid_signature_returns_401(
+    session_factory,
+) -> None:
+    line = FakeLineClient()
+    dispatcher = RecordingDispatcher()
+
+    configure_line_webhook_dependencies(
+        LineWebhookDependencies(
+            session_factory=session_factory,
+            channel_secret="secret",
+            dispatcher=dispatcher,
             notification_service=NotificationService(line),
         )
     )
@@ -85,19 +198,26 @@ def test_invalid_signature_returns_401(session_factory) -> None:
     response = TestClient(app).post(
         "/webhooks/line",
         json={"events": []},
-        headers={"X-Line-Signature": "invalid"},
+        headers={
+            "X-Line-Signature": "invalid"
+        },
     )
 
     assert response.status_code == 401
+    assert dispatcher.task_ids == []
 
 
-def test_invalid_json_returns_400(session_factory) -> None:
+def test_invalid_json_returns_400(
+    session_factory,
+) -> None:
     line = FakeLineClient()
+    dispatcher = RecordingDispatcher()
+
     configure_line_webhook_dependencies(
         LineWebhookDependencies(
             session_factory=session_factory,
             channel_secret="secret",
-            provider=SuccessfulProvider(),
+            dispatcher=dispatcher,
             notification_service=NotificationService(line),
         )
     )
@@ -108,21 +228,28 @@ def test_invalid_json_returns_400(session_factory) -> None:
         "/webhooks/line",
         content=body,
         headers={
-            "X-Line-Signature": sign_body(body, "secret"),
+            "X-Line-Signature": sign_body(
+                body,
+                "secret",
+            ),
         },
     )
 
     assert response.status_code == 400
+    assert dispatcher.task_ids == []
+
 
 def test_invalid_signature_is_rejected_before_json_parsing(
     session_factory,
 ) -> None:
     line = FakeLineClient()
+    dispatcher = RecordingDispatcher()
+
     configure_line_webhook_dependencies(
         LineWebhookDependencies(
             session_factory=session_factory,
             channel_secret="secret",
-            provider=SuccessfulProvider(),
+            dispatcher=dispatcher,
             notification_service=NotificationService(line),
         )
     )
@@ -130,7 +257,10 @@ def test_invalid_signature_is_rejected_before_json_parsing(
     response = TestClient(app).post(
         "/webhooks/line",
         content=b"{not-json",
-        headers={"X-Line-Signature": "invalid"},
+        headers={
+            "X-Line-Signature": "invalid"
+        },
     )
 
     assert response.status_code == 401
+    assert dispatcher.task_ids == []

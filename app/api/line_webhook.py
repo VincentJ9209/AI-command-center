@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.api.dependencies import get_line_webhook_dependencies
+from app.jobs.dispatcher import JobDispatchError
 from app.line.security import InvalidLineSignature, verify_line_signature
 from app.webhooks.line import LineWebhookOrchestrator
 
@@ -48,14 +49,20 @@ async def line_webhook(
         orchestrator = LineWebhookOrchestrator(
             session=session,
             channel_secret=dependencies.channel_secret,
-            provider=dependencies.provider,
+            dispatcher=dependencies.dispatcher,
             notification_service=dependencies.notification_service,
         )
-        result = orchestrator.handle(
-            body=body,
-            signature=x_line_signature,
-            payload=payload,
-        )
+        try:
+            result = orchestrator.handle(
+                body=body,
+                signature=x_line_signature,
+                payload=payload,
+            )
+        except JobDispatchError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Task dispatch unavailable",
+            ) from exc
     finally:
         session.close()
 

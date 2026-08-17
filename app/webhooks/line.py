@@ -1,25 +1,26 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.ai.provider import AIProvider
+from app.jobs.dispatcher import JobDispatcher
 from app.line.parser import LineTextMessage, parse_line_text_event
 from app.line.security import verify_line_signature
 from app.notifications.formatter import (
     format_ack,
     format_action_required,
-    format_done,
-    format_failed,
 )
 from app.notifications.service import NotificationService
 from app.persistence.models import TaskStatus
 from app.routing.router import route_task
-from app.tasks.executor import TaskExecutionService
 from app.tasks.repository import TaskRepository
 from app.tasks.service import TaskService
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -35,12 +36,12 @@ class LineWebhookOrchestrator:
         *,
         session: Session,
         channel_secret: str,
-        provider: AIProvider,
+        dispatcher: JobDispatcher,
         notification_service: NotificationService,
     ) -> None:
         self.session = session
         self.channel_secret = channel_secret
-        self.provider = provider
+        self.dispatcher = dispatcher
         self.notification_service = notification_service
 
     def handle(
@@ -50,7 +51,11 @@ class LineWebhookOrchestrator:
         signature: str,
         payload: dict[str, Any],
     ) -> LineWebhookResult:
-        verify_line_signature(body, signature, self.channel_secret)
+        verify_line_signature(
+            body,
+            signature,
+            self.channel_secret,
+        )
 
         processed = 0
         created = 0
@@ -58,11 +63,15 @@ class LineWebhookOrchestrator:
 
         for event in payload.get("events", []):
             message = parse_line_text_event(event)
+
             if message is None:
                 continue
 
             processed += 1
-            result = self._handle_text_message(message)
+
+            result = self._handle_text_message(
+                message
+            )
 
             if result:
                 created += 1
@@ -75,34 +84,75 @@ class LineWebhookOrchestrator:
             duplicate_events=duplicates,
         )
 
-    def _handle_text_message(self, message: LineTextMessage) -> bool:
+    def _handle_text_message(
+        self,
+        message: LineTextMessage,
+    ) -> bool:
         intent = route_task(message.text)
 
-        task_service = TaskService(self.session)
+        task_service = TaskService(
+            self.session
+        )
+
         receive_result = task_service.receive_task(
             line_message_id=message.message_id,
             project_key=intent.project_key,
             request_text=message.text,
+            source_user_id=message.user_id,
             normalized_intent={
                 "task_type": intent.task_type,
                 "action": intent.action.value,
                 "risk_level": intent.risk_level.value,
-                "requires_approval": intent.requires_approval,
+                "requires_approval": (
+                    intent.requires_approval
+                ),
             },
         )
 
         task = receive_result.task
+
         if not receive_result.created:
+            if (
+                TaskStatus(task.status)
+                == TaskStatus.RECEIVED
+                and not intent.requires_approval
+            ):
+                self.dispatcher.dispatch(
+                    task.id
+                )
+
             return False
 
-        self.notification_service.send_ack(
-            reply_token=message.reply_token,
-            notification=format_ack(task.id),
-        )
+        try:
+            self.notification_service.send_ack(
+                reply_token=message.reply_token,
+                notification=format_ack(
+                    task.id
+                ),
+            )
+        except Exception as exc:
+            logger.error(
+                "task.notification.failed "
+                "task_id=%s "
+                "notification=ACK "
+                "error=%s",
+                task.id,
+                exc,
+                extra={
+                    "task_id": task.id,
+                },
+            )
 
         if intent.requires_approval:
-            repository = TaskRepository(self.session)
-            repository.transition(task, TaskStatus.WAITING_APPROVAL)
+            repository = TaskRepository(
+                self.session
+            )
+
+            repository.transition(
+                task,
+                TaskStatus.WAITING_APPROVAL,
+            )
+
             self.session.commit()
 
             self.notification_service.send_push(
@@ -113,36 +163,11 @@ class LineWebhookOrchestrator:
                     message.text,
                 ),
             )
+
             return True
 
-        repository = TaskRepository(self.session)
-        claimed_task = repository.claim_for_execution(task.id)
-
-        if claimed_task is None:
-            raise RuntimeError(
-                f"Task {task.id} could not be claimed for execution"
-            )
-
-        execution = TaskExecutionService(
-            self.session,
-            self.provider,
-        ).execute(claimed_task)
-
-        if execution.success:
-            self.notification_service.send_push(
-                user_id=message.user_id,
-                notification=format_done(
-                    task.id,
-                    execution.result_summary or "",
-                ),
-            )
-        else:
-            self.notification_service.send_push(
-                user_id=message.user_id,
-                notification=format_failed(
-                    task.id,
-                    execution.error_message or "Unknown execution error",
-                ),
-            )
+        self.dispatcher.dispatch(
+            task.id
+        )
 
         return True
