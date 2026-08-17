@@ -5,7 +5,7 @@ from app.ai.provider import AIExecutionRequest, AIExecutionResult, AIProviderErr
 from app.notifications.service import NotificationService
 from app.persistence.models import Task, TaskStatus
 from app.webhooks.line import LineWebhookOrchestrator
-from tests.webhooks.conftest import sign_body
+from tests.conftest import sign_body
 
 
 class SuccessfulProvider:

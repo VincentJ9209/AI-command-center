@@ -9,7 +9,7 @@ from app.api.dependencies import (
 )
 from app.main import app
 from app.notifications.service import NotificationService
-from tests.webhooks.conftest import sign_body
+from tests.conftest import sign_body
 
 
 class SuccessfulProvider:
