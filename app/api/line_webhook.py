@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.api.dependencies import get_line_webhook_dependencies
-from app.line.security import InvalidLineSignature
+from app.line.security import InvalidLineSignature, verify_line_signature
 from app.webhooks.line import LineWebhookOrchestrator
 
 
@@ -19,12 +19,29 @@ async def line_webhook(
 ) -> dict[str, int]:
     body = await request.body()
 
+    dependencies = get_line_webhook_dependencies()
+
+    # Security boundary: verify the exact raw body before parsing it.
+    try:
+        verify_line_signature(
+            body,
+            x_line_signature,
+            dependencies.channel_secret,
+        )
+    except InvalidLineSignature as exc:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid LINE signature",
+        ) from exc
+
     try:
         payload = json.loads(body.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload") from exc
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid JSON payload",
+        ) from exc
 
-    dependencies = get_line_webhook_dependencies()
     session = dependencies.session_factory()
 
     try:
@@ -39,8 +56,6 @@ async def line_webhook(
             signature=x_line_signature,
             payload=payload,
         )
-    except InvalidLineSignature as exc:
-        raise HTTPException(status_code=401, detail="Invalid LINE signature") from exc
     finally:
         session.close()
 
