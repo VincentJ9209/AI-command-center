@@ -12,7 +12,7 @@ class TaskRepository:
     def get_by_line_message_id(self, line_message_id: str) -> Task | None:
         statement = select(Task).where(Task.line_message_id == line_message_id)
         return self.session.scalar(statement)
-    
+
     def get_by_id(self, task_id: str) -> Task | None:
         return self.session.get(Task, task_id)
 
