@@ -9,11 +9,14 @@ class FakeHttpClient:
     def __init__(self, response) -> None:
         self.response = response
         self.calls: list[dict] = []
+        self.closed = False
 
     def post(self, url, **kwargs):
         self.calls.append({"url": url, **kwargs})
         return self.response
 
+    def close(self) -> None:
+        self.closed = True
 
 def ok_response():
     return SimpleNamespace(
@@ -21,7 +24,6 @@ def ok_response():
         json=lambda: {},
         text="",
     )
-
 
 def test_reply_text_uses_reply_endpoint_and_bearer_token() -> None:
     http = FakeHttpClient(ok_response())
@@ -73,3 +75,16 @@ def test_line_api_error_is_wrapped() -> None:
 
     with pytest.raises(LineMessagingError, match="Invalid reply token"):
         client.reply_text(reply_token="expired", text="收到")
+
+def test_close_closes_http_client() -> None:
+    http = FakeHttpClient(
+        ok_response()
+    )
+    client = LineMessagingClient(
+        channel_access_token="token-123",
+        client=http,
+    )
+
+    client.close()
+
+    assert http.closed is True

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.openai_provider import (
@@ -29,11 +30,15 @@ from app.persistence.models import Base
 class Runtime:
     session_factory: sessionmaker[Session]
     dispatcher: LocalJobDispatcher
+    line_client: LineMessagingClient
+    engine: Engine
 
     def close(self) -> None:
         self.dispatcher.shutdown(
             wait=True
         )
+        self.line_client.close()
+        self.engine.dispose()
 
 
 def configure_runtime(
@@ -97,4 +102,6 @@ def configure_runtime(
     return Runtime(
         session_factory=session_factory,
         dispatcher=dispatcher,
+        line_client=line_client,
+        engine=engine,
     )
