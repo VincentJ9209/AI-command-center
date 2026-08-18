@@ -14,6 +14,33 @@ class RecordingDispatcher:
     ) -> None:
         self.shutdown_calls.append(wait)
 
+class RecordingLineClient:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def close(self) -> None:
+        self.events.append("line_client")
+
+
+class RecordingEngine:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def dispose(self) -> None:
+        self.events.append("engine")
+
+
+class OrderedRecordingDispatcher:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    def shutdown(
+        self,
+        *,
+        wait: bool = True,
+    ) -> None:
+        self.events.append("dispatcher")
+
 
 def test_configure_runtime_wires_background_dispatcher(
     monkeypatch,
@@ -185,14 +212,35 @@ def test_configure_runtime_wires_background_dispatcher(
 
 def test_runtime_close_shuts_down_dispatcher() -> None:
     dispatcher = RecordingDispatcher()
+    events: list[str] = []
 
     runtime = runtime_module.Runtime(
         session_factory=object(),
         dispatcher=dispatcher,
+        line_client=RecordingLineClient(events),
+        engine=RecordingEngine(events),
     )
 
     runtime.close()
 
     assert dispatcher.shutdown_calls == [
         True,
+    ]
+
+def test_runtime_close_releases_resources_in_order() -> None:
+    events: list[str] = []
+
+    runtime = runtime_module.Runtime(
+        session_factory=object(),
+        dispatcher=OrderedRecordingDispatcher(events),
+        line_client=RecordingLineClient(events),
+        engine=RecordingEngine(events),
+    )
+
+    runtime.close()
+
+    assert events == [
+        "dispatcher",
+        "line_client",
+        "engine",
     ]

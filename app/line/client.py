@@ -65,6 +65,9 @@ class LineMessagingClient:
         self._raise_for_line_error(response)
         return key
 
+    def close(self) -> None:
+        self.client.close()
+
     @staticmethod
     def _raise_for_line_error(response: Any) -> None:
         if 200 <= response.status_code < 300:
