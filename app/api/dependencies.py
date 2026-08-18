@@ -5,7 +5,7 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.ai.provider import AIProvider
+from app.jobs.dispatcher import JobDispatcher
 from app.notifications.service import NotificationService
 
 
@@ -13,7 +13,7 @@ from app.notifications.service import NotificationService
 class LineWebhookDependencies:
     session_factory: Callable[[], Session]
     channel_secret: str
-    provider: AIProvider
+    dispatcher: JobDispatcher
     notification_service: NotificationService
 
 

@@ -19,13 +19,18 @@ async def lifespan(app: FastAPI):
 
     configure_logging(settings.log_level)
 
-    app.state.runtime = configure_runtime(settings)
+    runtime = configure_runtime(settings)
+
+    app.state.runtime = runtime
 
     logger.info(
         "AI-command-center runtime configured"
     )
 
-    yield
+    try:
+        yield
+    finally:
+        runtime.close()
 
 
 app = FastAPI(

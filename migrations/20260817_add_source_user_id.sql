@@ -1,0 +1,2 @@
+ALTER TABLE tasks
+ADD COLUMN IF NOT EXISTS source_user_id VARCHAR(128);

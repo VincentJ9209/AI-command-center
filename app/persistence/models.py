@@ -48,6 +48,10 @@ class Task(Base):
         nullable=False,
         default="LINE",
     )
+    source_user_id: Mapped[str | None] = mapped_column(
+    String(128),
+    nullable=True,
+    )
     request_text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_intent: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(

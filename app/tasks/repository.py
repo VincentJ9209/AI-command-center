@@ -13,6 +13,35 @@ class TaskRepository:
         statement = select(Task).where(Task.line_message_id == line_message_id)
         return self.session.scalar(statement)
 
+    def get_by_id(self, task_id: str) -> Task | None:
+        return self.session.get(Task, task_id)
+
+    def claim_for_execution(
+        self,
+        task_id: str,
+    ) -> Task | None:
+        statement = (
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+        )
+
+        task = self.session.scalar(statement)
+
+        if task is None:
+            return None
+
+        if TaskStatus(task.status) != TaskStatus.RECEIVED:
+            return None
+
+        self.transition(
+            task,
+            TaskStatus.RUNNING,
+        )
+        self.session.commit()
+
+        return task
+
     def create(
         self,
         *,
@@ -20,12 +49,14 @@ class TaskRepository:
         project_key: str,
         request_text: str,
         source_channel: str = "LINE",
+        source_user_id: str | None = None,
         normalized_intent: dict | None = None,
     ) -> Task:
         task = Task(
             line_message_id=line_message_id,
             project_key=project_key,
             source_channel=source_channel,
+            source_user_id=source_user_id,
             request_text=request_text,
             normalized_intent=normalized_intent,
             status=TaskStatus.RECEIVED.value,

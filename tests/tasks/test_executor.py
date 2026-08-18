@@ -1,3 +1,5 @@
+import pytest
+
 from sqlalchemy.orm import Session
 
 from app.ai.provider import (
@@ -31,7 +33,13 @@ def _new_task(session: Session, message_id: str):
         request_text="分析 AI Skill 市場",
     )
     session.commit()
-    return task
+
+    claimed = repository.claim_for_execution(task.id)
+
+    assert claimed is not None
+    assert claimed.status == TaskStatus.RUNNING.value
+
+    return claimed
 
 
 def test_successful_provider_moves_task_to_completed(session: Session) -> None:
@@ -56,3 +64,29 @@ def test_provider_error_moves_task_to_failed(session: Session) -> None:
     assert outcome.error_message == "provider unavailable"
     assert task.status == TaskStatus.FAILED.value
     assert task.error_details == "provider unavailable"
+
+
+def test_execute_rejects_task_that_is_not_running(
+    session: Session,
+) -> None:
+    repository = TaskRepository(session)
+
+    task = repository.create(
+        line_message_id="executor-not-running",
+        project_key="GENERAL",
+        request_text="不應直接執行",
+    )
+    session.commit()
+
+    service = TaskExecutionService(
+        session,
+        SuccessfulProvider(),
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="RUNNING",
+    ):
+        service.execute(task)
+
+    assert task.status == TaskStatus.RECEIVED.value
