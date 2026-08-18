@@ -148,7 +148,10 @@ class TaskJobWorker:
         task: Task,
         execution: ExecutionOutcome,
     ) -> None:
-        if task.source_user_id is None:
+        if (
+            not task.source_user_id
+            or not task.source_user_id.strip()
+        ):
             logger.error(
                 "task.notification.failed "
                 "task_id=%s error=missing_source_user_id",

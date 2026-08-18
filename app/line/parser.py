@@ -20,6 +20,11 @@ def parse_line_text_event(event: dict[str, Any]) -> LineTextMessage | None:
 
     source = event.get("source") or {}
 
+    user_id = source.get("userId", "")
+
+    if not user_id.strip():
+        return None
+
     return LineTextMessage(
         user_id=source.get("userId", ""),
         reply_token=event.get("replyToken", ""),

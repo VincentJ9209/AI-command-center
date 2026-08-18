@@ -1,3 +1,5 @@
+import pytest
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -43,3 +45,37 @@ def test_receive_task_persists_source_user_id(
 
     assert result.created is True
     assert result.task.source_user_id == "user-1"
+
+
+@pytest.mark.parametrize(
+    "source_user_id",
+    [
+        "",
+        "   ",
+    ],
+)
+def test_receive_task_rejects_blank_source_user_id(
+    session: Session,
+    source_user_id: str,
+) -> None:
+    service = TaskService(session)
+
+    with pytest.raises(
+        ValueError,
+        match="source_user_id must be non-empty",
+    ):
+        service.receive_task(
+            line_message_id=(
+                "blank-source-user"
+            ),
+            project_key="GENERAL",
+            request_text="整理資訊",
+            source_user_id=source_user_id,
+        )
+
+    count = session.scalar(
+        select(func.count())
+        .select_from(Task)
+    )
+
+    assert count == 0

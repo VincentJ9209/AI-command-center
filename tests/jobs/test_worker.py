@@ -1,5 +1,7 @@
 import logging
 
+import pytest
+
 from app.ai.provider import (
     AIExecutionRequest,
     AIExecutionResult,
@@ -96,7 +98,7 @@ def _create_received_task(
     session_factory,
     *,
     message_id: str,
-    source_user_id: str = "user-1",
+    source_user_id: str | None = "user-1",
 ) -> str:
     with session_factory() as session:
         repository = TaskRepository(session)
@@ -339,3 +341,65 @@ def test_notification_failure_does_not_change_completed_status(
     assert error_details is None
 
     assert "task.notification.failed" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "source_user_id",
+    [
+        None,
+        "",
+        "   ",
+    ],
+)
+def test_worker_does_not_push_without_usable_source_user_id(
+    session_factory,
+    caplog,
+    source_user_id: str | None,
+) -> None:
+    task_id = _create_received_task(
+        session_factory,
+        message_id=(
+            "worker-missing-source-user-"
+            + repr(source_user_id)
+        ),
+        source_user_id=source_user_id,
+    )
+
+    provider = SuccessfulProvider()
+    line = RecordingLineClient()
+
+    worker = TaskJobWorker(
+        session_factory=session_factory,
+        provider=provider,
+        notification_service=NotificationService(line),
+    )
+
+    caplog.set_level(logging.ERROR)
+
+    worker.run(task_id)
+
+    status, result_summary, error_details = (
+        _load_task_state(
+            session_factory,
+            task_id,
+        )
+    )
+
+    assert provider.calls == 1
+    assert status == TaskStatus.COMPLETED.value
+    assert (
+        result_summary
+        == "完成：分析 AI Skill 市場"
+    )
+    assert error_details is None
+
+    assert line.pushes == []
+
+    assert (
+        "task.notification.failed"
+        in caplog.text
+    )
+    assert (
+        "missing_source_user_id"
+        in caplog.text
+    )   

@@ -27,6 +27,13 @@ class TaskService:
          source_user_id: str | None = None,
         normalized_intent: dict | None = None,
     ) -> ReceiveTaskResult:
+        if (
+            source_user_id is not None
+            and not source_user_id.strip()
+        ):
+            raise ValueError(
+                "source_user_id must be non-empty"
+            )
         existing = self.repository.get_by_line_message_id(line_message_id)
         if existing is not None:
             return ReceiveTaskResult(task=existing, created=False)
